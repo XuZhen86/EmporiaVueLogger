@@ -1,7 +1,7 @@
 import time
 from typing import Any
 
-from absl import app, flags, logging
+from absl import app, flags
 from line_protocol_cache.producer import LineProtocolCacheProducer
 from paho.mqtt.client import Client, MQTTMessage
 

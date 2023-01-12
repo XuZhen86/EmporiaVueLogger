@@ -3,7 +3,6 @@ from typing import Self
 
 from influxdb_client import Point
 from influxdb_client.domain.write_precision import WritePrecision
-from paho.mqtt.client import MQTTMessage
 
 
 @dataclass
