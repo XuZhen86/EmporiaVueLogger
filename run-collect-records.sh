@@ -5,7 +5,6 @@ OPTIONS=(
   --init
   --mount type=volume,src=emporia-vue-logger-data,dst=/app/data
   --name emporia-vue-logger-collect-records
-  --network none
   --restart unless-stopped
 )
 
