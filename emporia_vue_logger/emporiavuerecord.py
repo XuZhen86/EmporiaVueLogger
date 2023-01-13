@@ -7,7 +7,12 @@ from typing import Self
 from influxdb_client import Point
 from influxdb_client.domain.write_precision import WritePrecision
 
-_MQTT_PAYLOAD_REGEX = r"'(?:phase|circuit)_([lrab0-9]+)_(voltage|power)': Sending state (-?\d+\.\d+) [VW] with \d+ decimals of accuracy"
+# Tested on https://regex101.com with 123 strings.
+# r"'(?:phase|circuit)_([lrab0-9]+)_(voltage|power)': Sending state (-?\d+\.\d+) [VW] with \d+ decimals of accuracy"  # 9528 steps.
+# r"'(?:phase|circuit)_([lrab0-9]{2,3})_(voltage|power).{17}(-?\d+\.\d+)"  # 3870 steps.
+# r"_([lrab0-9]{2,3})_(voltage|power).{17}(-?\d+\.\d+)"  # 2595 steps.
+# r"_([lrab0-9]{2,3})_[^\d-]*(-?\d+\.\d+) (V|W)"  # 2202 steps.
+_MQTT_PAYLOAD_REGEX = r"_([ablr0-9]{2,3})_[^\d-]*(-?\d+\.\d+) ([VW])"  # 2091 steps.
 _MQTT_PAYLOAD_PATTERN = re.compile(_MQTT_PAYLOAD_REGEX)
 
 
@@ -52,17 +57,17 @@ class InputId(StrEnum):
   RIGHT_CIRCUIT_16 = 'r16'
 
 
-class ValueType(StrEnum):
-  VOLTAGE = 'voltage'
-  POWER = 'power'
+class ValueUnit(StrEnum):
+  VOLTAGE_V = 'V'
+  POWER_W = 'W'
 
 
 @dataclass
 class EmporiaVueRecord:
   timestamp_ns: int
   input_id: InputId
-  value_type: ValueType
   value: Decimal
+  value_unit: ValueUnit
 
   @classmethod
   def from_mqtt_payload(cls, timestamp_ns: int, mqtt_payload: str) -> Self | None:
@@ -75,12 +80,12 @@ class EmporiaVueRecord:
     return cls(
         timestamp_ns=timestamp_ns,
         input_id=InputId(groups[0]),
-        value_type=ValueType(groups[1]),
-        value=Decimal(groups[2]),
+        value=Decimal(groups[1]),
+        value_unit=ValueUnit(groups[2]),
     )
 
   def to_influxdb_points(self) -> list[Point]:
-    if self.value_type == ValueType.POWER:
+    if self.value_unit == ValueUnit.POWER_W:
       # yapf: disable
       return  [
           Point
@@ -91,7 +96,7 @@ class EmporiaVueRecord:
       ]
       # yapf: enable
 
-    if self.value_type == ValueType.VOLTAGE:
+    if self.value_unit == ValueUnit.VOLTAGE_V:
       # yapf: disable
       return [
           Point
