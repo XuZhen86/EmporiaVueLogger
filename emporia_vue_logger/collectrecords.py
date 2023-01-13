@@ -1,4 +1,5 @@
 import time
+from queue import Empty, Queue
 from typing import Any
 
 from absl import app, flags
@@ -59,32 +60,40 @@ def mqtt_client_on_message(
     mqtt_client: Client,
     userdata: Any,
     mqtt_message: MQTTMessage,
-    producer: LineProtocolCacheProducer,
+    line_protocol_queue: Queue[str],
 ) -> None:
   mqtt_payload = mqtt_message.payload.decode('utf-8')
 
   if (record := EmporiaVueRecord.from_mqtt_payload(time.time_ns(), mqtt_payload)) is not None:
-    producer.put(record.to_influxdb_line_protocols())
+    line_protocol_queue.put(record.to_influxdb_line_protocol())
     return
 
-  producer.put(
-      EmporiaVueLog.from_mqtt_payload(time.time_ns(), mqtt_payload).to_influxdb_line_protocols())
+  line_protocol_queue.put(
+      EmporiaVueLog.from_mqtt_payload(time.time_ns(), mqtt_payload).to_influxdb_line_protocol())
 
 
 def collect_records(args: list[str]) -> None:
   with LineProtocolCacheProducer() as producer:
+    line_protocol_queue: Queue[str] = Queue()
+
     mqtt_client = Client(client_id=_MQTT_CLIENT_ID.value, reconnect_on_failure=True)
     mqtt_client.on_connect = mqtt_client_on_connect
-    mqtt_client.on_message = lambda mc, u, mm: mqtt_client_on_message(mc, u, mm, producer)
+    mqtt_client.on_message = lambda mqtt_client, userdata, mqtt_message: mqtt_client_on_message(
+        mqtt_client, userdata, mqtt_message, line_protocol_queue)
     mqtt_client.username_pw_set(username=_MQTT_USERNAME.value, password=_MQTT_PASSWORD.value)
 
     try:
-      mqtt_client.connect(
-          host=_MQTT_BROKER_ADDRESS.value,
-          port=_MQTT_BROKER_PORT.value,
-          keepalive=10,
-      )
-      mqtt_client.loop_forever()
+      mqtt_client.connect(host=_MQTT_BROKER_ADDRESS.value, port=_MQTT_BROKER_PORT.value)
+      mqtt_client.loop_start()
+
+      pending_line_protocols: list[str] = []
+      while True:
+        try:
+          pending_line_protocols.append(line_protocol_queue.get(block=False))
+        except Empty:
+          producer.put(pending_line_protocols)
+          pending_line_protocols.clear()
+          time.sleep(1)
     finally:
       mqtt_client.disconnect()
 

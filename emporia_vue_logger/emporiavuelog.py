@@ -14,15 +14,13 @@ class EmporiaVueLog:
   def from_mqtt_payload(cls, timestamp_ns: int, mqtt_payload: str) -> Self:
     return cls(timestamp_ns=timestamp_ns, message=mqtt_payload)
 
-  def to_influxdb_points(self) -> list[Point]:
+  def to_influxdb_point(self) -> Point:
     # yapf: disable
-    return  [
-        Point
-            .measurement('log')
-            .field('message', self.message)
-            .time(self.timestamp_ns, write_precision=WritePrecision.NS)
-    ]
+    return (Point
+        .measurement('log')
+        .field('message', self.message)
+        .time(self.timestamp_ns, write_precision=WritePrecision.NS))
     # yapf: enable
 
-  def to_influxdb_line_protocols(self) -> list[str]:
-    return [point.to_line_protocol() for point in self.to_influxdb_points()]
+  def to_influxdb_line_protocol(self) -> str:
+    return self.to_influxdb_point().to_line_protocol()

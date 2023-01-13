@@ -84,30 +84,26 @@ class EmporiaVueRecord:
         value_unit=ValueUnit(groups[2]),
     )
 
-  def to_influxdb_points(self) -> list[Point]:
+  def to_influxdb_point(self) -> Point:
     if self.value_unit == ValueUnit.POWER_W:
       # yapf: disable
-      return  [
-          Point
-              .measurement('power')
-              .tag('input_id', self.input_id)
-              .field('power_mw', int(self.value * 1000))
-              .time(self.timestamp_ns, write_precision=WritePrecision.NS)
-      ]
+      return (Point
+          .measurement('power')
+          .tag('input_id', self.input_id)
+          .field('power_mw', int(self.value * 1000))
+          .time(self.timestamp_ns, write_precision=WritePrecision.NS))
       # yapf: enable
 
     if self.value_unit == ValueUnit.VOLTAGE_V:
       # yapf: disable
-      return [
-          Point
-              .measurement('voltage')
-              .tag('input_id', self.input_id)
-              .field('voltage_mv', int(self.value * 1000))
-              .time(self.timestamp_ns, write_precision=WritePrecision.NS)
-      ]
+      return (Point
+          .measurement('voltage')
+          .tag('input_id', self.input_id)
+          .field('voltage_mv', int(self.value * 1000))
+          .time(self.timestamp_ns, write_precision=WritePrecision.NS))
       # yapf: enable
 
     raise NotImplementedError()
 
-  def to_influxdb_line_protocols(self) -> list[str]:
-    return [point.to_line_protocol() for point in self.to_influxdb_points()]
+  def to_influxdb_line_protocol(self) -> str:
+    return self.to_influxdb_point().to_line_protocol()
