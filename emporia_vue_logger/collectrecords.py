@@ -68,8 +68,8 @@ def mqtt_client_on_message(
     line_protocol_queue.put(record.to_influxdb_line_protocol())
     return
 
-  line_protocol_queue.put(
-      EmporiaVueLog.from_mqtt_payload(time.time_ns(), mqtt_payload).to_influxdb_line_protocol())
+  log = EmporiaVueLog.from_mqtt_payload_and_topic(time.time_ns(), mqtt_payload, mqtt_message.topic)
+  line_protocol_queue.put(log.to_influxdb_line_protocol())
 
 
 def collect_records(args: list[str]) -> None:
