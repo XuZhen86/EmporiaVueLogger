@@ -37,6 +37,13 @@ _MQTT_BROKER_PORT = flags.DEFINE_integer(
     default=1883,
     help='The network port of the server host to connect to.',
 )
+_MQTT_QOS = flags.DEFINE_integer(
+    name='mqtt_qos',
+    default=2,
+    lower_bound=0,
+    upper_bound=2,
+    help='The desired quality of service level for the subscription.',
+)
 
 _MQTT_TOPICS = flags.DEFINE_multi_string(
     name='mqtt_topics',
@@ -53,7 +60,7 @@ def mqtt_client_on_connect(
     rc: int,
 ) -> None:
   for topic in _MQTT_TOPICS.value:
-    mqtt_client.subscribe(topic)
+    mqtt_client.subscribe(topic, _MQTT_QOS.value)
 
 
 def mqtt_client_on_message(
