@@ -11,7 +11,7 @@ setuptools.setup(
         'absl-py>=1.3.0',
         'esphome>=2022.12.3',
         'paho-mqtt>=1.6.1',
-        'line_protocol_cache@git+https://github.com/XuZhen86/LineProtocolCache',
+        'line_protocol_cache@git+https://github.com/XuZhen86/LineProtocolCache@ee551c6daec8e92218ae0118bb6c34bd1827c819',
     ],
     entry_points={
         'console_scripts': [
