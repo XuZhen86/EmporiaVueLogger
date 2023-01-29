@@ -26,7 +26,7 @@ class EmporiaVueLog:
         .measurement('log')
         .tag('mqtt_topic', self.mqtt_topic)
         .field('message', self.message)
-        .time(self.timestamp_ns, write_precision=WritePrecision.NS))
+        .time(self.timestamp_ns, write_precision=WritePrecision.NS))  # type: ignore
     # yapf: enable
 
   def to_influxdb_line_protocol(self) -> str:

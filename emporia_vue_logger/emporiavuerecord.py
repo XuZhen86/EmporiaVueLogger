@@ -7,16 +7,18 @@ from typing import Self
 from influxdb_client import Point
 from influxdb_client.domain.write_precision import WritePrecision
 
-# Tested on https://regex101.com with 123 strings.
-# r"'(?:phase|circuit)_([lrab0-9]+)_(voltage|power)': Sending state (-?\d+\.\d+) [VW] with \d+ decimals of accuracy"  # 9528 steps.
-# r"'(?:phase|circuit)_([lrab0-9]{2,3})_(voltage|power).{17}(-?\d+\.\d+)"  # 3870 steps.
-# r"_([lrab0-9]{2,3})_(voltage|power).{17}(-?\d+\.\d+)"  # 2595 steps.
-# r"_([lrab0-9]{2,3})_[^\d-]*(-?\d+\.\d+) (V|W)"  # 2202 steps.
-_MQTT_PAYLOAD_REGEX = r"_([ablr0-9]{2,3})_[^\d-]*(-?\d+\.\d+) ([VW])"  # 2091 steps.
+# [D][sensor:127]: 'circuit_l15_power': Sending state 70.87800 W with 1 decimals of accuracy
+# [D][sensor:127]: 'phase_la_voltage': Sending state 117.94200 V with 1 decimals of accuracy
+# [D][sensor:127]: 'phase_la_frequency': Sending state 60.21352 Hz with 1 decimals of accuracy
+# [D][sensor:127]: '_l_phase_angle': Sending state 177.87234 ° with 0 decimals of accuracy
+# [D][sensor:127]: '_l_wifi_signal': Sending state -77.00000 dBm with 0 decimals of accuracy
+# [D][sensor:127]: '_l_uptime_sensor': Sending state 766.19501 s with 0 decimals of accuracy
+_MQTT_PAYLOAD_REGEX = r"_([ablr0-9]{1,3})_[^\d-]*(-?\d+\.\d+) (\S+)"
 _MQTT_PAYLOAD_PATTERN = re.compile(_MQTT_PAYLOAD_REGEX)
 
 
 class InputId(StrEnum):
+  LEFT = 'l'
   LEFT_PHASE_A = 'la'
   LEFT_PHASE_B = 'lb'
   LEFT_PHASE_C = 'lc'
@@ -36,6 +38,7 @@ class InputId(StrEnum):
   LEFT_CIRCUIT_14 = 'l14'
   LEFT_CIRCUIT_15 = 'l15'
   LEFT_CIRCUIT_16 = 'l16'
+  RIGHT = 'r'
   RIGHT_PHASE_A = 'ra'
   RIGHT_PHASE_B = 'rb'
   RIGHT_PHASE_C = 'rc'
@@ -60,6 +63,10 @@ class InputId(StrEnum):
 class ValueUnit(StrEnum):
   VOLTAGE_V = 'V'
   POWER_W = 'W'
+  FREQUENCY_Hz = 'Hz'
+  ANGLE_DEGREE = '°'
+  SIGNAL_dBm = 'dBm'
+  TIME_s = 's'
 
 
 @dataclass
@@ -76,13 +83,15 @@ class EmporiaVueRecord:
       return None
 
     groups = match.groups()
-
-    return cls(
-        timestamp_ns=timestamp_ns,
-        input_id=InputId(groups[0]),
-        value=Decimal(groups[1]),
-        value_unit=ValueUnit(groups[2]),
-    )
+    try:
+      return cls(
+          timestamp_ns=timestamp_ns,
+          input_id=InputId(groups[0]),
+          value=Decimal(groups[1]),
+          value_unit=ValueUnit(groups[2]),
+      )
+    except ValueError:
+      return None
 
   def to_influxdb_point(self) -> Point:
     if self.value_unit == ValueUnit.POWER_W:
@@ -91,7 +100,7 @@ class EmporiaVueRecord:
           .measurement('power')
           .tag('input_id', self.input_id)
           .field('power_mw', int(self.value * 1000))
-          .time(self.timestamp_ns, write_precision=WritePrecision.NS))
+          .time(self.timestamp_ns, write_precision=WritePrecision.NS))  # type: ignore
       # yapf: enable
 
     if self.value_unit == ValueUnit.VOLTAGE_V:
@@ -100,7 +109,43 @@ class EmporiaVueRecord:
           .measurement('voltage')
           .tag('input_id', self.input_id)
           .field('voltage_mv', int(self.value * 1000))
-          .time(self.timestamp_ns, write_precision=WritePrecision.NS))
+          .time(self.timestamp_ns, write_precision=WritePrecision.NS))  # type: ignore
+      # yapf: enable
+
+    if self.value_unit == ValueUnit.FREQUENCY_Hz:
+      # yapf: disable
+      return (Point
+          .measurement('frequency')
+          .tag('input_id', self.input_id)
+          .field('frequency_mHz', int(self.value * 1000))
+          .time(self.timestamp_ns, write_precision=WritePrecision.NS))  # type: ignore
+      # yapf: enable
+
+    if self.value_unit == ValueUnit.ANGLE_DEGREE:
+      # yapf: disable
+      return (Point
+          .measurement('phase_angle')
+          .tag('input_id', self.input_id)
+          .field('phase_angle_degree_1000x', int(self.value * 1000))
+          .time(self.timestamp_ns, write_precision=WritePrecision.NS))  # type: ignore
+      # yapf: enable
+
+    if self.value_unit == ValueUnit.SIGNAL_dBm:
+      # yapf: disable
+      return (Point
+          .measurement('signal')
+          .tag('input_id', self.input_id)
+          .field('rssi_dBm', int(self.value))
+          .time(self.timestamp_ns, write_precision=WritePrecision.NS))  # type: ignore
+      # yapf: enable
+
+    if self.value_unit == ValueUnit.TIME_s:
+      # yapf: disable
+      return (Point
+          .measurement('uptime')
+          .tag('input_id', self.input_id)
+          .field('uptime_ms', int(self.value * 1000))
+          .time(self.timestamp_ns, write_precision=WritePrecision.NS))  # type: ignore
       # yapf: enable
 
     raise NotImplementedError()
