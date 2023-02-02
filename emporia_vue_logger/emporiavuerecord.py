@@ -1,22 +1,17 @@
 import re
 from dataclasses import dataclass
 from decimal import Decimal
-from enum import StrEnum
-from typing import Self
+from enum import StrEnum, unique
+from typing import Callable, Self
 
 from influxdb_client import Point
 from influxdb_client.domain.write_precision import WritePrecision
 
-# [D][sensor:127]: 'circuit_l15_power': Sending state 70.87800 W with 1 decimals of accuracy
-# [D][sensor:127]: 'phase_la_voltage': Sending state 117.94200 V with 1 decimals of accuracy
-# [D][sensor:127]: 'phase_la_frequency': Sending state 60.21352 Hz with 1 decimals of accuracy
-# [D][sensor:127]: '_l_phase_angle': Sending state 177.87234 ° with 0 decimals of accuracy
-# [D][sensor:127]: '_l_wifi_signal': Sending state -77.00000 dBm with 0 decimals of accuracy
-# [D][sensor:127]: '_l_uptime_sensor': Sending state 766.19501 s with 0 decimals of accuracy
-_MQTT_PAYLOAD_REGEX = r"_([ablr0-9]{1,3})_[^\d-]*(-?\d+\.\d+) (\S+)"
+_MQTT_PAYLOAD_REGEX = r"'([lrabc0-9]{1,3})_(\w+)[^\d-]*(-?\d+\.\d+) (\S+)"
 _MQTT_PAYLOAD_PATTERN = re.compile(_MQTT_PAYLOAD_REGEX)
 
 
+@unique
 class InputId(StrEnum):
   LEFT = 'l'
   LEFT_PHASE_A = 'la'
@@ -59,96 +54,150 @@ class InputId(StrEnum):
   RIGHT_CIRCUIT_15 = 'r15'
   RIGHT_CIRCUIT_16 = 'r16'
 
+  @classmethod
+  def device_ids(cls) -> list[Self]:
+    return [cls(device) for device in 'lr']
 
+  @classmethod
+  def phase_ids(cls) -> list[Self]:
+    return [cls(device + phase) for device in 'lr' for phase in 'abc']
+
+  @classmethod
+  def circuit_ids(cls) -> list[Self]:
+    return [cls(device + str(circuit + 1)) for device in 'lr' for circuit in range(0, 16)]
+
+
+@unique
+class Measurement(StrEnum):
+  DEBUG_BLOCK = 'debug_block'
+  DEBUG_FREE = 'debug_free'
+  DEBUG_LOOP_TIME = 'debug_loop_time'
+  FREQUENCY = 'frequency'
+  PHASE_ANGLE = 'phase_angle'
+  POWER = 'power'
+  UPTIME = 'uptime'
+  VOLTAGE = 'voltage'
+  WIFI_SIGNAL = 'wifi_signal'
+
+
+@unique
 class ValueUnit(StrEnum):
-  VOLTAGE_V = 'V'
-  POWER_W = 'W'
-  FREQUENCY_Hz = 'Hz'
-  ANGLE_DEGREE = '°'
-  SIGNAL_dBm = 'dBm'
-  TIME_s = 's'
+  BYTES = 'B'
+  DECIBEL_MILLIWATT = 'dBm'
+  DEGREE = '°'
+  DEGREE_1000X = 'degree_1000x'
+  HERTZ = 'Hz'
+  MILLIHERTZ = 'mHz'
+  MILLISECOND = 'ms'
+  MILLIVOLT = 'mV'
+  MILLIWATT = 'mW'
+  SECOND = 's'
+  VOLT = 'V'
+  WATT = 'W'
+
+
+@dataclass
+class MeasurementInvariant:
+  expected_input_ids: list[InputId]
+  expected_input_unit: ValueUnit
+  unit_converter: Callable[[Decimal], int]
+  output_unit: ValueUnit
+
+
+MEASUREMENT_INVARIANTS: dict[Measurement, MeasurementInvariant] = {
+    Measurement.DEBUG_BLOCK:
+    MeasurementInvariant(expected_input_ids=InputId.device_ids(),
+                         expected_input_unit=ValueUnit.BYTES,
+                         unit_converter=lambda v: int(v),
+                         output_unit=ValueUnit.BYTES),
+    Measurement.DEBUG_FREE:
+    MeasurementInvariant(expected_input_ids=InputId.device_ids(),
+                         expected_input_unit=ValueUnit.BYTES,
+                         unit_converter=lambda v: int(v),
+                         output_unit=ValueUnit.BYTES),
+    Measurement.DEBUG_LOOP_TIME:
+    MeasurementInvariant(expected_input_ids=InputId.device_ids(),
+                         expected_input_unit=ValueUnit.MILLISECOND,
+                         unit_converter=lambda v: int(v),
+                         output_unit=ValueUnit.MILLISECOND),
+    Measurement.FREQUENCY:
+    MeasurementInvariant(expected_input_ids=InputId.phase_ids(),
+                         expected_input_unit=ValueUnit.HERTZ,
+                         unit_converter=lambda v: int(v * 1000),
+                         output_unit=ValueUnit.MILLIHERTZ),
+    Measurement.PHASE_ANGLE:
+    MeasurementInvariant(expected_input_ids=InputId.phase_ids(),
+                         expected_input_unit=ValueUnit.DEGREE,
+                         unit_converter=lambda v: int(v * 1000),
+                         output_unit=ValueUnit.DEGREE_1000X),
+    Measurement.POWER:
+    MeasurementInvariant(expected_input_ids=InputId.phase_ids() + InputId.circuit_ids(),
+                         expected_input_unit=ValueUnit.WATT,
+                         unit_converter=lambda v: int(v * 1000),
+                         output_unit=ValueUnit.MILLIWATT),
+    Measurement.UPTIME:
+    MeasurementInvariant(expected_input_ids=InputId.device_ids(),
+                         expected_input_unit=ValueUnit.SECOND,
+                         unit_converter=lambda v: int(v * 1000),
+                         output_unit=ValueUnit.MILLISECOND),
+    Measurement.VOLTAGE:
+    MeasurementInvariant(expected_input_ids=InputId.phase_ids(),
+                         expected_input_unit=ValueUnit.VOLT,
+                         unit_converter=lambda v: int(v * 1000),
+                         output_unit=ValueUnit.MILLIVOLT),
+    Measurement.WIFI_SIGNAL:
+    MeasurementInvariant(expected_input_ids=InputId.device_ids(),
+                         expected_input_unit=ValueUnit.DECIBEL_MILLIWATT,
+                         unit_converter=lambda v: int(v),
+                         output_unit=ValueUnit.DECIBEL_MILLIWATT),
+}
 
 
 @dataclass
 class EmporiaVueRecord:
   timestamp_ns: int
   input_id: InputId
-  value: Decimal
-  value_unit: ValueUnit
+  measurement: Measurement
+  input_value: Decimal
 
   @classmethod
-  def from_mqtt_payload(cls, timestamp_ns: int, mqtt_payload: str) -> Self | None:
-    match = _MQTT_PAYLOAD_PATTERN.search(mqtt_payload)
+  def from_log_message(cls, timestamp_ns: int, log_message: str) -> Self | None:
+    match = _MQTT_PAYLOAD_PATTERN.search(log_message)
     if match is None:
       return None
 
     groups = match.groups()
+
     try:
-      return cls(
-          timestamp_ns=timestamp_ns,
-          input_id=InputId(groups[0]),
-          value=Decimal(groups[1]),
-          value_unit=ValueUnit(groups[2]),
-      )
+      input_id = InputId(groups[0])
+      measurement = Measurement(groups[1])
+      input_value = Decimal(groups[2])
+      input_unit = ValueUnit(groups[3])
     except ValueError:
       return None
 
+    try:
+      assert input_id in MEASUREMENT_INVARIANTS[measurement].expected_input_ids
+      assert input_unit == MEASUREMENT_INVARIANTS[measurement].expected_input_unit
+    except AssertionError:
+      return None
+
+    return cls(timestamp_ns=timestamp_ns,
+               input_id=input_id,
+               measurement=measurement,
+               input_value=input_value)
+
   def to_influxdb_point(self) -> Point:
-    if self.value_unit == ValueUnit.POWER_W:
-      # yapf: disable
-      return (Point
-          .measurement('power')
-          .tag('input_id', self.input_id)
-          .field('power_mw', int(self.value * 1000))
-          .time(self.timestamp_ns, write_precision=WritePrecision.NS))  # type: ignore
-      # yapf: enable
+    output_value = MEASUREMENT_INVARIANTS[self.measurement].unit_converter(self.input_value)
+    output_unit = MEASUREMENT_INVARIANTS[self.measurement].output_unit
 
-    if self.value_unit == ValueUnit.VOLTAGE_V:
-      # yapf: disable
-      return (Point
-          .measurement('voltage')
-          .tag('input_id', self.input_id)
-          .field('voltage_mv', int(self.value * 1000))
-          .time(self.timestamp_ns, write_precision=WritePrecision.NS))  # type: ignore
-      # yapf: enable
-
-    if self.value_unit == ValueUnit.FREQUENCY_Hz:
-      # yapf: disable
-      return (Point
-          .measurement('frequency')
-          .tag('input_id', self.input_id)
-          .field('frequency_mHz', int(self.value * 1000))
-          .time(self.timestamp_ns, write_precision=WritePrecision.NS))  # type: ignore
-      # yapf: enable
-
-    if self.value_unit == ValueUnit.ANGLE_DEGREE:
-      # yapf: disable
-      return (Point
-          .measurement('phase_angle')
-          .tag('input_id', self.input_id)
-          .field('phase_angle_degree_1000x', int(self.value * 1000))
-          .time(self.timestamp_ns, write_precision=WritePrecision.NS))  # type: ignore
-      # yapf: enable
-
-    if self.value_unit == ValueUnit.SIGNAL_dBm:
-      # yapf: disable
-      return (Point
-          .measurement('signal')
-          .tag('input_id', self.input_id)
-          .field('rssi_dBm', int(self.value))
-          .time(self.timestamp_ns, write_precision=WritePrecision.NS))  # type: ignore
-      # yapf: enable
-
-    if self.value_unit == ValueUnit.TIME_s:
-      # yapf: disable
-      return (Point
-          .measurement('uptime')
-          .tag('input_id', self.input_id)
-          .field('uptime_ms', int(self.value * 1000))
-          .time(self.timestamp_ns, write_precision=WritePrecision.NS))  # type: ignore
-      # yapf: enable
-
-    raise NotImplementedError()
+    # yapf: disable
+    return (Point
+        .measurement(self.measurement)
+        .tag('input_id', self.input_id)
+        .field(f'{self.measurement}_{output_unit}', output_value)
+        .time(self.timestamp_ns, write_precision=WritePrecision.NS))  # type: ignore
+    # yapf: enable
 
   def to_influxdb_line_protocol(self) -> str:
     return self.to_influxdb_point().to_line_protocol()

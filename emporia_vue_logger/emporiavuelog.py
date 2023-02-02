@@ -8,24 +8,24 @@ from influxdb_client.domain.write_precision import WritePrecision
 @dataclass
 class EmporiaVueLog:
   timestamp_ns: int
-  message: str
-  mqtt_topic: str
+  log_message: str
+  device_name: str
 
   @classmethod
-  def from_mqtt_payload_and_topic(
+  def from_log_message(
       cls,
       timestamp_ns: int,
-      mqtt_payload: str,
-      mqtt_topic: str,
+      log_message: str,
+      device_name: str,
   ) -> Self:
-    return cls(timestamp_ns=timestamp_ns, message=mqtt_payload, mqtt_topic=mqtt_topic)
+    return cls(timestamp_ns=timestamp_ns, log_message=log_message, device_name=device_name)
 
   def to_influxdb_point(self) -> Point:
     # yapf: disable
     return (Point
         .measurement('log')
-        .tag('mqtt_topic', self.mqtt_topic)
-        .field('message', self.message)
+        .tag('device_name', self.device_name)
+        .field('log_message', self.log_message)
         .time(self.timestamp_ns, write_precision=WritePrecision.NS))  # type: ignore
     # yapf: enable
 

@@ -9,9 +9,9 @@ setuptools.setup(
     python_requires='>=3.11',
     install_requires=[
         'absl-py>=1.3.0',
+        'aioesphomeapi>=13.0.0',
         'esphome>=2022.12.3',
-        'paho-mqtt>=1.6.1',
-        'line_protocol_cache@git+https://github.com/XuZhen86/LineProtocolCache@ee551c6daec8e92218ae0118bb6c34bd1827c819',
+        'line_protocol_cache@git+https://github.com/XuZhen86/LineProtocolCache@26ade43329fd143fd2311926620e5a01082be1e1',
     ],
     entry_points={
         'console_scripts': [
