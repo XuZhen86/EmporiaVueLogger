@@ -1,0 +1,28 @@
+services:
+  collect-records-left-column: &collect-records-left-column
+    command:
+      - emporia-vue-logger-collect-records
+      - --flagfile=data/collect-records-left-column-flags.txt
+    image: emporia-vue-logger
+    init: true
+    mem_limit: 128M
+    restart: unless-stopped
+    volumes:
+      - data:/app/data
+
+  collect-records-right-column:
+    <<: *collect-records-left-column
+    command:
+      - emporia-vue-logger-collect-records
+      - --flagfile=data/collect-records-right-column-flags.txt
+
+  write-records-to-influxdb:
+    <<: *collect-records-left-column
+    command:
+      - line-protocol-cache-consumer
+      - --flagfile=data/line-protocol-cache-consumer-flags.txt
+
+version: '2.4'
+
+volumes:
+  data:
