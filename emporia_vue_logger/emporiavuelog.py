@@ -12,12 +12,7 @@ class EmporiaVueLog:
   device_name: str
 
   @classmethod
-  def from_log_message(
-      cls,
-      timestamp_ns: int,
-      log_message: str,
-      device_name: str,
-  ) -> Self:
+  def from_log_message(cls, timestamp_ns: int, log_message: str, device_name: str) -> Self:
     return cls(timestamp_ns=timestamp_ns, log_message=log_message, device_name=device_name)
 
   def to_influxdb_point(self) -> Point:

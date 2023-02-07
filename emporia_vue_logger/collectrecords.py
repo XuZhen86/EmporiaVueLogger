@@ -40,9 +40,14 @@ _ESPHOME_NOISE_PSK = flags.DEFINE_string(
 )
 
 
-def on_log(response: SubscribeLogsResponse, device_name: str, line_protocol_queue: Queue[str]):
+def on_log(response: SubscribeLogsResponse, device_name: str,
+           line_protocol_queue: Queue[str]) -> None:
   timestamp_ns = time.time_ns()
-  message = response.message.decode('utf-8')  # type: ignore
+
+  try:
+    message = response.message.decode('utf-8')  # type: ignore
+  except:
+    return
 
   if (record := EmporiaVueRecord.from_log_message(timestamp_ns, message)) is not None:
     line_protocol_queue.put(record.to_influxdb_line_protocol())
@@ -52,7 +57,7 @@ def on_log(response: SubscribeLogsResponse, device_name: str, line_protocol_queu
   line_protocol_queue.put(log.to_influxdb_line_protocol())
 
 
-async def on_connect(api_client: APIClient, line_protocol_queue: Queue[str]):
+async def on_connect(api_client: APIClient, line_protocol_queue: Queue[str]) -> None:
   try:
     device_info = await api_client.device_info()
     await api_client.subscribe_logs(
