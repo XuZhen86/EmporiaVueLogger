@@ -11,7 +11,7 @@ setuptools.setup(
         'absl-py>=1.3.0',
         'aioesphomeapi>=13.0.0',
         'esphome>=2022.12.3',
-        'line_protocol_cache@git+https://github.com/XuZhen86/LineProtocolCache@26ade43329fd143fd2311926620e5a01082be1e1',
+        'line_protocol_cache@git+https://github.com/XuZhen86/LineProtocolCache@a7965f30589af8c318ff7654d307ca9ec7d9f40f',
     ],
     entry_points={
         'console_scripts': [
